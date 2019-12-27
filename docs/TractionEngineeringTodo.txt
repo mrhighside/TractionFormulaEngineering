@@ -1,0 +1,23 @@
+Traction Engineering:
+
+Goals: Become hired by a Formula 1 or Formula E or Formula Extreme Team 
+
+Todo:
+	Start with RC Cars
+
+	Sensor suite
+	Traction Control
+	Stability Control
+
+	A Car
+
+	Budget 
+
+
+Long Term
+
+	3D Printer
+	CnC Machine
+	Race Series
+
+	

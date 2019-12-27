@@ -1,0 +1,19 @@
+{
+  "modes": [
+    {
+      "modeName": "safe",
+      "modeNumber": 0,
+      "sensitivity": 250
+    },
+    {
+      "modeName": "attack",
+      "modeNumber": 1,
+      "sensitivity": 100
+    },
+    {
+      "modeName": "cruise",
+      "modeNumber": 2,
+      "sensitivity": 400
+    }
+  ]
+}
