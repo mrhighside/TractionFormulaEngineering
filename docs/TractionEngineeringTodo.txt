@@ -3,6 +3,12 @@ Traction Engineering:
 Goals: Become hired by a Formula 1 or Formula E or Formula Extreme Team 
 
 Todo:
+	Code TODO:
+		rename files
+		break out statusIndicators, tractioncontrol, stability control, etc... to seperate modules
+		Write testfunctions, and make main() call them and set indicator light if error
+
+		
 	Start with RC Cars
 
 	Sensor suite
