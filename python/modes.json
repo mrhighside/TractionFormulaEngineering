@@ -3,20 +3,20 @@
     {
       "modeName": "safe",
       "modeNumber": 0,
-      "sensitivity": 250,
+      "useIndicator": true,
       "indicatorColor": "green"
     },
     {
       "modeName": "attack",
       "modeNumber": 1,
-      "sensitivity": 100,
+      "useIndicator": false,
       "indicatorColor": "purple"
     },
     {
       "modeName": "cruise",
       "modeNumber": 2,
-      "sensitivity": 400,
-      "indicatorColor": "yellow"
+      "useIndicator": false,
+      "indicatorColor": "blue"
     }
   ]
 }

@@ -12,50 +12,28 @@ from adafruit_mcp3xxx.analog_in import AnalogIn
 
 import RPi.GPIO as GPIO
 
-#Setup Led
-LED_PIN = 19
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(LED_PIN,GPIO.OUT)
+#custom imports
+from traction_control import TractionControl
+from stability_control import StabilityControl
+from hardware_interface import HardwareInterface
 
-#setup button
-button1 = digitalio.DigitalInOut(board.D23)
-button1.direction = digitalio.Direction.INPUT
-button1.pull = digitalio.Pull.UP
-
-RED_LED_PIN = 21
-GREEN_LED_PIN = 12
-BLUE_LED_PIN = 26
-
-GPIO.setup(RED_LED_PIN,GPIO.OUT)
-GPIO.setup(GREEN_LED_PIN,GPIO.OUT)
-GPIO.setup(BLUE_LED_PIN,GPIO.OUT)
-
-#turn off
-GPIO.output(RED_LED_PIN, GPIO.HIGH)
-GPIO.output(GREEN_LED_PIN, GPIO.HIGH)
-GPIO.output(BLUE_LED_PIN, GPIO.HIGH)
-
-# create the spi bus
-spi = busio.SPI(clock=board.SCK, MISO=board.MISO, MOSI=board.MOSI)
-
-# create the cs (chip select)
-cs = digitalio.DigitalInOut(board.D22)
-
-# create the mcp object
-mcp = MCP.MCP3008(spi, cs)
-
-# create an analog input channel on pin 0
-chan0 = AnalogIn(mcp, MCP.P0)
-
-print('Raw ADC Value: ', chan0.value)
-print('ADC Voltage: ' + str(chan0.voltage) + 'V')
-
-#current Mode
-selectedMode = 0
 
 def main():
+	nonlocal selectedModeNumber
+	nonlocal selectedMode
+	nonlocal MODES
 
+	nonlocal interface
+
+	interface = HardwareInterface()
+
+	if interface.doInitilazationTest():
+		print("Hardware Interface Ready.")
+	else:
+		print("Error with Hardware Interface! Exiting!")
+		sys.exit(1)
+
+	selectedModeNumber = 0
 	modesFileName = "modes.json"
 	defaultModeNumber = 0
 
@@ -74,21 +52,35 @@ def main():
 	selectedModeNumber = defaultModeNumber
 	print("Loading modes from {}, defaulting to modeNumber {}.".format(modesFileName, selectedModeNumber))
 
-	modes = loadModes(modesFileName)
+	MODES = loadModes(modesFileName)
 
-	if len(modes) ==0:
+	if len(MODES) ==0:
 		print("Error! No modes loaded! Exiting!")
-	elif len(modes) < selectedModeNumber:
+	elif len(MODES) < selectedModeNumber:
 		print("Default mode number to high! Defaulting to 0!")
 		selectedModeNumber = 0
 
-	selectedMode = modes[selectedModeNumber]
-
-	#print("Default mode selected: {}".format(selectedMode['modeName']))
-	#sensitivity = selectedMode["sensitivity"]
-	#print("sensitivity: {}".format(sensitivity))
+	selectedMode = MODES[selectedModeNumber]
 
 	print("Using mode: {}.".format(selectedMode['modeName']))
+
+	#Init Modules 
+	#TODO: Dynamic Module Loading
+	tc = TractionControl(selectedMode)
+
+	if tc.doInitilazationTest():
+		print("Traction Control Ready.")
+	else:
+		print("Error with Traction Control! Exiting!")
+		interface.setColorLED("red")
+
+	sc = StabilityControl(selectedMode)
+
+	if sc.doInitilazationTest():
+		print("Stability Control Ready.")
+	else:
+		print("Error with Stability Control! Exiting!")
+		interface.setColorLED("red")
 
 	last_read = 0       # this keeps track of the last potentiometer value
 	currentLightOn = False
@@ -96,50 +88,13 @@ def main():
 	try:
 		#main Loop
 		while True:
-			if not button1.value:
-				selectedModeNumber = selectedModeNumber + 1
-
-				#only 2 modes
-				if selectedModeNumber >= len(modes):
-					selectedModeNumber = 0
-
-				selectedMode = modes[selectedModeNumber]
+			if interface.isModeChange():
+				selectedMode = updateMode()
+				setColorLED(selectedMode["indicatorColor"])
 				print("Mode: {} enganged.".format(selectedMode["modeName"]))
-
-			setColorLED(selectedMode["indicatorColor"])
-			
-			# we'll assume that the pot didn't move
-			trim_pot_changed = False
-
-			# read the analog pin
-			trim_pot = chan0.value
-
-			# how much has it changed since the last read?
-			pot_adjust = abs(trim_pot - last_read)
-
-			if pot_adjust > selectedMode['sensitivity']:
-				trim_pot_changed = True
-
-			if trim_pot_changed and selectedMode["modeName"] == "attack":
-				# convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-				normalizedTrimPot = normalizeValues(trim_pot, 0, 65535, 0, 100)
-
-				# set OS volume playback volume
-				#print('Volume = {volume}%' .format(volume = set_volume))
-				#set_vol_cmd = 'sudo amixer cset numid=1 -- {volume}% > /dev/null' \
-				#.format(volume = set_volume)
-				#os.system(set_vol_cmd)
-				if normalizedTrimPot > 50 and not currentLightOn:
-					print("LED on")
-					currentLightOn = True
-					GPIO.output(LED_PIN,GPIO.HIGH)
-				elif normalizedTrimPot <= 50 and currentLightOn:
-					print ("LED off")
-					currentLightOn = False
-					GPIO.output(LED_PIN,GPIO.LOW)
-
-				# save the potentiometer reading for the next loop
-				last_read = trim_pot
+				
+			if selectedMode["useIndicator"] == True
+			interface.handleIndicatorSwitch()
 
 
 			# hang out and do nothing for a half second
@@ -148,40 +103,14 @@ def main():
 		GPIO.cleanup()
 
 
-def setColorLED(color="off"):
-	red = GPIO.HIGH
-	green = GPIO.HIGH
-	blue = GPIO.HIGH
+def updateMode():
+	selectedModeNumber = selectedModeNumber + 1
 
-	if color == "purple":
-		red = GPIO.LOW
-		blue = GPIO.LOW
-	elif color == "red":
-		red = GPIO.LOW
-	elif color == "blue":
-		blue = GPIO.LOW
-	elif color == "green":
-		green = GPIO.LOW
-	elif color == "yellow":
-		red = GPIO.LOW
-		green = GPIO.LOW 
+	if selectedModeNumber >= len(MODES):
+		selectedModeNumber = 0
 
-
-	GPIO.output(RED_LED_PIN, red)
-	GPIO.output(GREEN_LED_PIN, green)
-	GPIO.output(BLUE_LED_PIN, blue)
-
-def normalizeValues(value, left_min, left_max, right_min, right_max):
-	# this remaps a value from original (left) range to new (right) range
-	# Figure out how 'wide' each range is
-	left_span = left_max - left_min
-	right_span = right_max - right_min
-
-	# Convert the left range into a 0-1 range (int)
-	valueScaled = int(value - left_min) / int(left_span)
-
-	# Convert the 0-1 range into a value in the right range.
-	return int(right_min + (valueScaled * right_span))
+	newSelectedMode = MODES[selectedModeNumber]
+	return newSelectedMode
 
 def loadModes(fileName = "modes.json"):
 
