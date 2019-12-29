@@ -15,41 +15,32 @@ import RPi.GPIO as GPIO
 class HardwareInterface:
 	def __init__(self):
 		#Setup Led
-		nonlocal LED_PIN
-		nonlocal RED_LED_PIN
-		nonlocal GREEN_LED_PIN
-		nonlocal BLUE_LED_PIN
+		self.LED_PIN = 19
+		self.RED_LED_PIN = 21
+		self.GREEN_LED_PIN = 12
+		self.BLUE_LED_PIN = 26
 
-		nonlocal potSensitivity
-		potSensitivity = 250
+		self.potSensitivity = 250
 
-		nonlocal currentLightOn
-		currentLightOn = False
+		self.currentLightOn = False
 
-		turnIndicatorLightOff(self)
-
-		LED_PIN = 19
 		GPIO.setmode(GPIO.BCM)
 		GPIO.setwarnings(False)
-		GPIO.setup(LED_PIN,GPIO.OUT)
+		GPIO.setup(self.LED_PIN,GPIO.OUT)
 
 		#setup button
-		button1 = digitalio.DigitalInOut(board.D23)
-		button1.direction = digitalio.Direction.INPUT
-		button1.pull = digitalio.Pull.UP
+		self.button1 = digitalio.DigitalInOut(board.D23)
+		self.button1.direction = digitalio.Direction.INPUT
+		self.button1.pull = digitalio.Pull.UP
 
-		RED_LED_PIN = 21
-		GREEN_LED_PIN = 12
-		BLUE_LED_PIN = 26
-
-		GPIO.setup(RED_LED_PIN,GPIO.OUT)
-		GPIO.setup(GREEN_LED_PIN,GPIO.OUT)
-		GPIO.setup(BLUE_LED_PIN,GPIO.OUT)
+		GPIO.setup(self.RED_LED_PIN,GPIO.OUT)
+		GPIO.setup(self.GREEN_LED_PIN,GPIO.OUT)
+		GPIO.setup(self.BLUE_LED_PIN,GPIO.OUT)
 
 		#turn off
-		GPIO.output(RED_LED_PIN, GPIO.HIGH)
-		GPIO.output(GREEN_LED_PIN, GPIO.HIGH)
-		GPIO.output(BLUE_LED_PIN, GPIO.HIGH)
+		GPIO.output(self.RED_LED_PIN, GPIO.HIGH)
+		GPIO.output(self.GREEN_LED_PIN, GPIO.HIGH)
+		GPIO.output(self.BLUE_LED_PIN, GPIO.HIGH)
 
 		# create the spi bus
 		spi = busio.SPI(clock=board.SCK, MISO=board.MISO, MOSI=board.MOSI)
@@ -61,10 +52,13 @@ class HardwareInterface:
 		mcp = MCP.MCP3008(spi, cs)
 
 		# create an analog input channel on pin 0
-		chan0 = AnalogIn(mcp, MCP.P0)
+		self.chan0 = AnalogIn(mcp, MCP.P0)
 
-		print('Raw ADC Value: ', chan0.value)
-		print('ADC Voltage: ' + str(chan0.voltage) + 'V')
+		self.last_read = 0
+
+		self.lastButtonValue = False
+
+		self.turnIndicatorLightOff()
 
 	def doInitilazationTest(self):
 		#go through some stuff to make sure shit is working.
@@ -75,15 +69,14 @@ class HardwareInterface:
 		return True
 
 	def isModeChange(self):
-		nonlocal lastButtonValue
-		lastButtonValue = False
-
 		#buttons are backwards
-		buttonValue = not button1.value
+		buttonValue = not self.button1.value
 
-		if buttonValue != lastButtonValue:
+		if buttonValue == True and buttonValue != self.lastButtonValue:
+			self.lastButtonValue = buttonValue
 			return True
 		else:
+			self.lastButtonValue = buttonValue
 			return False
 
 	def setColorLED(self, color="off"):
@@ -105,9 +98,9 @@ class HardwareInterface:
 			green = GPIO.LOW 
 
 
-		GPIO.output(RED_LED_PIN, red)
-		GPIO.output(GREEN_LED_PIN, green)
-		GPIO.output(BLUE_LED_PIN, blue)
+		GPIO.output(self.RED_LED_PIN, red)
+		GPIO.output(self.GREEN_LED_PIN, green)
+		GPIO.output(self.BLUE_LED_PIN, blue)
 
 	def normalizeValues(self, value, left_min, left_max, right_min, right_max):
 		# this remaps a value from original (left) range to new (right) range
@@ -122,10 +115,10 @@ class HardwareInterface:
 		return int(right_min + (valueScaled * right_span))
 
 	def turnIndicatorLightOn(self):
-		GPIO.output(LED_PIN,GPIO.HIGH)
+		GPIO.output(self.LED_PIN,GPIO.HIGH)
 
 	def turnIndicatorLightOff(self):
-		GPIO.output(LED_PIN,GPIO.LOW)
+		GPIO.output(self.LED_PIN,GPIO.LOW)
 
 	def handleIndicatorSwitch(self):
 
@@ -133,26 +126,29 @@ class HardwareInterface:
 		trim_pot_changed = False
 
 		# read the analog pin
-		trim_pot = chan0.value
+		trim_pot = self.chan0.value
 
 		# how much has it changed since the last read?
-		pot_adjust = abs(trim_pot - last_read)
+		pot_adjust = abs(trim_pot - self.last_read)
 
-		if pot_adjust > potSensitivity:
+		if pot_adjust > self.potSensitivity:
 			trim_pot_changed = True
 
 		if trim_pot_changed:
 			# convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-			normalizedTrimPot = normalizeValues(trim_pot, 0, 65535, 0, 100)
+			normalizedTrimPot = self.normalizeValues(trim_pot, 0, 65535, 0, 100)
 
-			if normalizedTrimPot > 50 and not currentLightOn:
-				print("LED on")
-				currentLightOn = True
-				turnIndicatorLightOn(self)
-			elif normalizedTrimPot <= 50 and currentLightOn:
-				print ("LED off")
-				currentLightOn = False
-				turnIndicatorLightOff(self)
+			if normalizedTrimPot > 50 and not self.currentLightOn:
+				#print("LED on")
+				self.currentLightOn = True
+				self.turnIndicatorLightOn()
+			elif normalizedTrimPot <= 50 and self.currentLightOn:
+				#print ("LED off")
+				self.currentLightOn = False
+				self.turnIndicatorLightOff()
 
 			# save the potentiometer reading for the next loop
-			last_read = trim_pot
+			self.last_read = trim_pot
+
+	def cleanup(self):
+		GPIO.cleanup()

@@ -17,128 +17,160 @@ from traction_control import TractionControl
 from stability_control import StabilityControl
 from hardware_interface import HardwareInterface
 
-
+#Startup function
+#handles command line args and kicks off the good stuff
 def main():
-	nonlocal selectedModeNumber
-	nonlocal selectedMode
-	nonlocal MODES
-
-	nonlocal interface
-
-	interface = HardwareInterface()
-
-	if interface.doInitilazationTest():
-		print("Hardware Interface Ready.")
-	else:
-		print("Error with Hardware Interface! Exiting!")
-		sys.exit(1)
-
-	selectedModeNumber = 0
+	#get and run instance of our class
 	modesFileName = "modes.json"
-	defaultModeNumber = 0
 
 	if len(sys.argv) > 1 and (sys.argv[1].lower() == "help" or sys.argv[1].lower() == "version"):
-		printHelpMessage()
-		sys.exit(0)
+			printHelpMessage()
+			sys.exit(0)
 
-	#print(len(sys.argv))
-
+	defaultModeNumber = 0
+	
 	if len(sys.argv) > 1:
 		modesFileName = sys.argv[1]
 
 	if len(sys.argv) > 2:
 		defaultModeNumber = int(sys.argv[2])
 
-	selectedModeNumber = defaultModeNumber
-	print("Loading modes from {}, defaulting to modeNumber {}.".format(modesFileName, selectedModeNumber))
+	tfe = TractionFormulaEngineering(modesFileName, defaultModeNumber)
 
-	MODES = loadModes(modesFileName)
+	tfe.start()
 
-	if len(MODES) ==0:
-		print("Error! No modes loaded! Exiting!")
-	elif len(MODES) < selectedModeNumber:
-		print("Default mode number to high! Defaulting to 0!")
-		selectedModeNumber = 0
+class TractionFormulaEngineering:
+	#Main Class for All things Awesome
 
-	selectedMode = MODES[selectedModeNumber]
+	def __init__(self, modesFileName, defaultModeNumber):
+		#get Hardware Interface
+		self.interface = HardwareInterface()
 
-	print("Using mode: {}.".format(selectedMode['modeName']))
+		if self.interface.doInitilazationTest():
+			print("Hardware Interface Ready.")
+		else:
+			print("Error with Hardware Interface! Exiting!")
+			sys.exit(1)
 
-	#Init Modules 
-	#TODO: Dynamic Module Loading
-	tc = TractionControl(selectedMode)
+		self.selectedModeNumber = 0
+		
+		self.selectedModeNumber = defaultModeNumber
+		print("Loading modes from {}, defaulting to modeNumber {}.".format(modesFileName, self.selectedModeNumber))
 
-	if tc.doInitilazationTest():
-		print("Traction Control Ready.")
-	else:
-		print("Error with Traction Control! Exiting!")
-		interface.setColorLED("red")
+		self.MODES = self.loadModes(modesFileName)
 
-	sc = StabilityControl(selectedMode)
+		if len(self.MODES) ==0:
+			print("Error! No modes loaded! Exiting!")
+		elif len(self.MODES) < self.selectedModeNumber:
+			print("Default mode number to high! Defaulting to 0!")
+			self.selectedModeNumber = 0
 
-	if sc.doInitilazationTest():
-		print("Stability Control Ready.")
-	else:
-		print("Error with Stability Control! Exiting!")
-		interface.setColorLED("red")
+		self.selectedMode = self.MODES[self.selectedModeNumber]
 
-	last_read = 0       # this keeps track of the last potentiometer value
-	currentLightOn = False
+		#Init Modules - BEFORE we try and engage the mode.
+		#TODO: Dynamic Module Loading
+		self.tc = TractionControl(self.selectedMode, self.interface)
 
-	try:
-		#main Loop
-		while True:
-			if interface.isModeChange():
-				selectedMode = updateMode()
-				setColorLED(selectedMode["indicatorColor"])
-				print("Mode: {} enganged.".format(selectedMode["modeName"]))
-				
-			if selectedMode["useIndicator"] == True
-			interface.handleIndicatorSwitch()
+		if self.tc.doInitilazationTest():
+			print("Traction Control Ready.")
+		else:
+			print("Error with Traction Control! Exiting!")
+			self.interface.setColorLED("red")
+
+		self.sc = StabilityControl(self.selectedMode, self.interface)
+
+		if self.sc.doInitilazationTest():
+			print("Stability Control Ready.")
+		else:
+			print("Error with Stability Control! Exiting!")
+			self.interface.setColorLED("red")
+
+		#Now we can engage the initial Mode
+		self.engageMode(self.selectedMode)
+
+		print("Using mode: {}.".format(self.selectedMode['modeName']))
 
 
-			# hang out and do nothing for a half second
-			time.sleep(0.125)
-	except KeyboardInterrupt:
-		GPIO.cleanup()
+	def start(self):
+		last_read = 0       # this keeps track of the last potentiometer value
+		currentLightOn = False
 
+		try:
+			#main Loop
+			while True:
+				if self.interface.isModeChange():
+					newMode = self.updateMode()
+					#First disenage old Mode
+					self.disengageMode(self.selectedMode)
+					self.selectedMode = newMode
+					#Now Engage the new Mode
+					self.engageMode(self.selectedMode)
 
-def updateMode():
-	selectedModeNumber = selectedModeNumber + 1
+				#kick off modules this loop
+				#TODO: dynamic this
+				self.tc.run()
+				self.sc.run()
 
-	if selectedModeNumber >= len(MODES):
-		selectedModeNumber = 0
+				# hang out and do nothing for a bit
+				time.sleep(0.125)
+		except KeyboardInterrupt:
+			self.interface.cleanup()
 
-	newSelectedMode = MODES[selectedModeNumber]
-	return newSelectedMode
+	def engageMode(self, currentMode):
+		#update all the modules to the new Mode
+		#TODO: dynamically do this for all modules
+		if self.tc.engageMode(currentMode) and self.sc.engageMode(currentMode):
+			self.interface.setColorLED(currentMode["indicatorColor"])
+			print("Mode: {} enganged.".format(currentMode["modeName"]))
+		else:
+			print("Mode failed to engage! GAH!!")
+			self.interface.setColorLED("red")
+		
+	def disengageMode(self, oldMode):
+		#update all the modules to the new Mode
+		#TODO: dynamically do this for all modules
+		if self.tc.disengageMode(oldMode) and self.sc.disengageMode(oldMode):
+			print("Mode: {} disenganged.".format(oldMode["modeName"]))
+		else:
+			print("Mode failed to disengage! GAH!!")
+			self.interface.setColorLED("red")
 
-def loadModes(fileName = "modes.json"):
+	def updateMode(self):
+		self.selectedModeNumber = self.selectedModeNumber + 1
 
-	print("Loading Modes from {}.".format(fileName))
+		if self.selectedModeNumber >= len(self.MODES):
+			self.selectedModeNumber = 0
 
-	safeMode = False
-	# read file
-	if not path.exists(fileName):
-		print("Mode file '{}' not found! ".format(fileName))
-		safeMode = True
+		newSelectedMode = self.MODES[self.selectedModeNumber]
+		return newSelectedMode
 
-	if safeMode:
-		print("Entering Safe Mode!")
-		modes = [{"modeName":"SAFEMODE", "modeNumber":0, "sensitivity":400}]
-		return modes
+	def loadModes(self, fileName = "modes.json"):
 
-	with open(fileName, 'r') as configFile:
-		data=configFile.read()
+		print("Loading Modes from {}.".format(fileName))
 
-	# parse file
-	configs = json.loads(data)
-	configFile.close()
-	
-	return configs["modes"]
+		safeMode = False
+		# read file
+		if not path.exists(fileName):
+			print("Mode file '{}' not found! ".format(fileName))
+			safeMode = True
+
+		if safeMode:
+			print("Entering Safe Mode!")
+			modes = [{"modeName":"SAFEMODE", "modeNumber":0, "sensitivity":400}]
+			return modes
+
+		with open(fileName, 'r') as configFile:
+			data=configFile.read()
+
+		# parse file
+		configs = json.loads(data)
+		configFile.close()
+		
+		return configs["modes"]
 
 def printHelpMessage():
 	print("Usage: python3 {} [<modesFileName.json>][,<defaultMode (int)>".format(os.path.basename(__file__)))
-	print("modesFilename defaults to 'modes.json'.")
+	print("modesFileName defaults to 'modes.json'.")
 	print("defaultMode defaults to 0.")
 
 if __name__ == "__main__":
