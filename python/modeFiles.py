@@ -52,8 +52,6 @@ class TractionFormulaEngineering:
 			print("Error with Hardware Interface! Exiting!")
 			sys.exit(1)
 
-		self.selectedModeNumber = 0
-		
 		self.selectedModeNumber = defaultModeNumber
 		print("Loading modes from {}, defaulting to modeNumber {}.".format(modesFileName, self.selectedModeNumber))
 
