@@ -4,20 +4,24 @@ Goals: Become hired by a Formula 1 or Formula E or Formula Extreme Team
 
 Todo:
 	Code TODO:
-		rename files
-		break out statusIndicators, tractioncontrol, stability control, etc... to seperate modules
-		Write testfunctions, and make main() call them and set indicator light if error
+		[ ] Document Current Wiring
+		[ ] rename files
+		[x] break out statusIndicators, tractioncontrol, stability control, etc... to 	
+			stability seperate modules
+		[x] Write testfunctions, and make main() call them and set indicator light if error
 
 		
 	Start with RC Cars
+		[ ] Take apart Crappy RC Car
+		[ ] FIgure out how we can use it for tests
+		[ ] Sensor suite
+		[ ] Traction Control
+		[ ] Stability Control
+		[ ] ERS
 
-	Sensor suite
-	Traction Control
-	Stability Control
+	[ ] Get a Real Car
 
-	A Car
-
-	Budget 
+	[ ] Get a Budget 
 
 
 Long Term
