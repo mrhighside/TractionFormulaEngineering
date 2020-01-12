@@ -12,8 +12,11 @@ Todo:
 
 		
 	Start with RC Cars
-		[ ] Take apart Crappy RC Car
-		[ ] FIgure out how we can use it for tests
+		[X] Shitty robot
+		[F] Control with pi - car is piece of shit
+		[ ] Get Crappy RC car
+ 		[ ] Take apart Crappy RC Car
+		[ ] Figure out how we can use it for tests
 		[ ] Sensor suite
 		[ ] Traction Control
 		[ ] Stability Control
@@ -25,7 +28,7 @@ Todo:
 
 
 Long Term
-
+	Build a wind tunnel
 	3D Printer
 	CnC Machine
 	Race Series
