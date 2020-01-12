@@ -1,4 +1,8 @@
+import json
 import os
+import os.path
+from os import path
+import sys
 import time
 import busio
 import digitalio
@@ -8,96 +12,166 @@ from adafruit_mcp3xxx.analog_in import AnalogIn
 
 import RPi.GPIO as GPIO
 
-#Setup Led
-LED_PIN = 19
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(LED_PIN,GPIO.OUT)
+#custom imports
+from modules.traction_control import TractionControl
+from modules.stability_control import StabilityControl
+from modules.hardware_interface import HardwareInterface
 
-#setup button
-button1 = digitalio.DigitalInOut(board.D23)
-button1.direction = digitalio.Direction.INPUT
-button1.pull = digitalio.Pull.UP
+#Startup function
+#handles command line args and kicks off the good stuff
+def main():
+	#get and run instance of our class
+	modesFileName = "./config/modes.json"
+
+	if len(sys.argv) > 1 and (sys.argv[1].lower() == "help" or sys.argv[1].lower() == "version"):
+			printHelpMessage()
+			sys.exit(0)
+
+	defaultModeNumber = 0
+	
+	if len(sys.argv) > 1:
+		modesFileName = sys.argv[1]
+
+	if len(sys.argv) > 2:
+		defaultModeNumber = int(sys.argv[2])
+
+	tfe = TractionFormulaEngineering(modesFileName, defaultModeNumber)
+
+	tfe.start()
+
+class TractionFormulaEngineering:
+	#Main Class for All things Awesome
+
+	def __init__(self, modesFileName, defaultModeNumber):
+		#get Hardware Interface
+		self.interface = HardwareInterface()
+
+		if self.interface.doInitilazationTest():
+			print("Hardware Interface Ready.")
+		else:
+			print("Error with Hardware Interface! Exiting!")
+			sys.exit(1)
+
+		self.selectedModeNumber = 0
+		
+		self.selectedModeNumber = defaultModeNumber
+		print("Loading modes from {}, defaulting to modeNumber {}.".format(modesFileName, self.selectedModeNumber))
+
+		self.MODES = self.loadModes(modesFileName)
+
+		if len(self.MODES) ==0:
+			print("Error! No modes loaded! Exiting!")
+		elif len(self.MODES) < self.selectedModeNumber:
+			print("Default mode number to high! Defaulting to 0!")
+			self.selectedModeNumber = 0
+
+		self.selectedMode = self.MODES[self.selectedModeNumber]
+
+		#Init Modules - BEFORE we try and engage the mode.
+		#TODO: Dynamic Module Loading
+		self.tc = TractionControl(self.selectedMode, self.interface)
+
+		if self.tc.doInitilazationTest():
+			print("Traction Control Ready.")
+		else:
+			print("Error with Traction Control! Exiting!")
+			self.interface.setColorLED("red")
+
+		self.sc = StabilityControl(self.selectedMode, self.interface)
+
+		if self.sc.doInitilazationTest():
+			print("Stability Control Ready.")
+		else:
+			print("Error with Stability Control! Exiting!")
+			self.interface.setColorLED("red")
+
+		#Now we can engage the initial Mode
+		self.engageMode(self.selectedMode)
+
+		print("Using mode: {}.".format(self.selectedMode['modeName']))
 
 
+	def start(self):
+		last_read = 0       # this keeps track of the last potentiometer value
+		currentLightOn = False
 
-# create the spi bus
-spi = busio.SPI(clock=board.SCK, MISO=board.MISO, MOSI=board.MOSI)
+		try:
+			#main Loop
+			while True:
+				if self.interface.isModeChange():
+					newMode = self.getNewMode()
+					#First disenage old Mode
+					self.disengageMode(self.selectedMode)
+					self.selectedMode = newMode
+					#Now Engage the new Mode
+					self.engageMode(self.selectedMode)
 
-# create the cs (chip select)
-cs = digitalio.DigitalInOut(board.D22)
+				#kick off modules this loop
+				#TODO: dynamic this
+				self.tc.run()
+				self.sc.run()
 
-# create the mcp object
-mcp = MCP.MCP3008(spi, cs)
+				# hang out and do nothing for a bit
+				time.sleep(0.125)
+		except KeyboardInterrupt:
+			self.interface.cleanup()
 
-# create an analog input channel on pin 0
-chan0 = AnalogIn(mcp, MCP.P0)
+	def engageMode(self, currentMode):
+		#update all the modules to the new Mode
+		#TODO: dynamically do this for all modules
+		if self.tc.engageMode(currentMode) and self.sc.engageMode(currentMode):
+			self.interface.setColorLED(currentMode["indicatorColor"])
+			print("Mode: {} enganged.".format(currentMode["modeName"]))
+		else:
+			print("Mode failed to engage! GAH!!")
+			self.interface.setColorLED("red")
+		
+	def disengageMode(self, oldMode):
+		#update all the modules to the new Mode
+		#TODO: dynamically do this for all modules
+		if self.tc.disengageMode(oldMode) and self.sc.disengageMode(oldMode):
+			print("Mode: {} disenganged.".format(oldMode["modeName"]))
+		else:
+			print("Mode failed to disengage! GAH!!")
+			self.interface.setColorLED("red")
 
-print('Raw ADC Value: ', chan0.value)
-print('ADC Voltage: ' + str(chan0.voltage) + 'V')
+	def getNewMode(self):
+		self.selectedModeNumber = self.selectedModeNumber + 1
 
-last_read = 0       # this keeps track of the last potentiometer value
-tolerance = 250     # to keep from being jittery we'll only change
-                    # volume when the pot has moved a significant amount
-                    # on a 16-bit ADC
+		if self.selectedModeNumber >= len(self.MODES):
+			self.selectedModeNumber = 0
 
-mode = 0;           #default to mode 0
+		newSelectedMode = self.MODES[self.selectedModeNumber]
+		return newSelectedMode
 
-def remap_range(value, left_min, left_max, right_min, right_max):
-    # this remaps a value from original (left) range to new (right) range
-    # Figure out how 'wide' each range is
-    left_span = left_max - left_min
-    right_span = right_max - right_min
+	def loadModes(self, fileName = "modes.json"):
 
-    # Convert the left range into a 0-1 range (int)
-    valueScaled = int(value - left_min) / int(left_span)
+		print("Loading Modes from {}.".format(fileName))
 
-    # Convert the 0-1 range into a value in the right range.
-    return int(right_min + (valueScaled * right_span))
+		safeMode = False
+		# read file
+		if not path.exists(fileName):
+			print("ERROR: Mode file '{}' not found!!! ".format(fileName))
+			safeMode = True
 
-while True:
+		if safeMode:
+			print("Entering Safe Mode!")
+			modes = [{"modeName":"SAFEMODE", "modeNumber":0, "sensitivity":400, "useIndicator": False, "indicatorColor": "red"}]
+			return modes
 
-    if not button1.value:
-        print("Changing Mode:")
-        print(button1.value)
-        mode = mode + 1
+		with open(fileName, 'r') as configFile:
+			data=configFile.read()
 
-        #only 2 modes
-        if mode >= 2:
-            mode = 0
+		# parse file
+		configs = json.loads(data)
+		configFile.close()
+		
+		return configs["modes"]
 
-        print("Mode: {} enganged".format(mode))
+def printHelpMessage():
+	print("Usage: python3 {} [<modesFileName.json>][,<defaultMode (int)>".format(os.path.basename(__file__)))
+	print("modesFileName defaults to 'modes.json'.")
+	print("defaultMode defaults to 0.")
 
-    # we'll assume that the pot didn't move
-    trim_pot_changed = False
-
-    # read the analog pin
-    trim_pot = chan0.value
-
-    # how much has it changed since the last read?
-    pot_adjust = abs(trim_pot - last_read)
-
-    if pot_adjust > tolerance:
-        trim_pot_changed = True
-
-    if trim_pot_changed and mode == 1:
-        # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-        set_volume = remap_range(trim_pot, 0, 65535, 0, 100)
-
-        # set OS volume playback volume
-        #print('Volume = {volume}%' .format(volume = set_volume))
-        #set_vol_cmd = 'sudo amixer cset numid=1 -- {volume}% > /dev/null' \
-        #.format(volume = set_volume)
-        #os.system(set_vol_cmd)
-        if set_volume > 50:
-            print("LED on")
-            GPIO.output(LED_PIN,GPIO.HIGH)
-        else:
-            print ("LED off")
-            GPIO.output(LED_PIN,GPIO.LOW)
-
-        # save the potentiometer reading for the next loop
-        last_read = trim_pot
-
-    # hang out and do nothing for a half second
-    time.sleep(0.125)
+if __name__ == "__main__":
+	main()
