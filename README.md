@@ -17,6 +17,7 @@ Feel free to join the adventure, with pull requests or come on down to:
 
 http://www.twitch.com/zerofollowthrough
 
-# TODO:
+---
+**TODO:**
 	See docs/todo.txt
 
