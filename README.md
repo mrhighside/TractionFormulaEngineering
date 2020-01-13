@@ -1,4 +1,4 @@
-# TractionFormulaEngineering
+# Traction Formula Engineering
 
 Traction Formula Engineering is a Auto Racing and Engineering Firm (lol)
 
@@ -17,6 +17,6 @@ Feel free to join the adventure, with pull requests or come on down to:
 
 http://www.twitch.com/zerofollowthrough
 
-TODO:
+#TODO:
 	See docs/todo.txt
 
